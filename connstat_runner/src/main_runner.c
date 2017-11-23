@@ -1,5 +1,5 @@
 /*
- * Main.c
+ * main_runner.c
  *
  *  Created on: 23 Nov 2017
  *      Author: Omri Ravid
@@ -112,7 +112,6 @@ int main(int argc, char *argv[]){
 		return 1;
 	}
 
-	/* Get the statistics result string from the library */
 	char statistics_result[MAX_SIZE_OF_PROG_OUTPUT];
 	size_t strLen;
 	rc = connection_stats_get_statistics(statistics_result, &strLen);
