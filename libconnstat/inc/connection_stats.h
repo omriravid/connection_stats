@@ -28,7 +28,7 @@
 #define DEFAULT_NUM_OF_HTTP_REQ         1
 #define DEFAULT_URL                     "http://www.google.com/"
 #define DEFAULT_URL_SIZE                strlen(DEFAULT_URL)
-#define MAX_SIZE_OF_PROG_OUTPUT         64
+#define MAX_SIZE_OF_PROG_OUTPUT         128
 #define URL_MAX_LEN                     64
 #define URL_MIN_LEN                     5
 #define HTTP_HEADER_MAX_LEN             64
@@ -49,7 +49,10 @@ typedef enum
 	RC_INVALID_NUM_OF_HTTP_REQ,
 	RC_INVALID_URL,
 	RC_INVALID_HTTP_HEADER,
-	RC_ERROR_IN_CURL
+	RC_ERROR_IN_CURL,
+	RC_RESULT_REQUESTED_BEFORE_TRIGGER,
+	RC_ERROR_IN_FILE_OR_FOLDER,
+	RC_PARSING_ERROR
 } RC;
 
 
@@ -102,5 +105,21 @@ RC connection_stats_analyze();
 * @return Return Code (taken from RC enum)
 */
 RC connection_stats_close();
+
+/**
+* @func   connection_stats_get_statistics
+* @desc   String with the statistics according to the following format:
+*           TEST;<IP address of HTTP server>;<HTTP response code>;
+*             <median of CURLINFO_NAMELOOKUP_TIME>;
+*             <median of CURLINFO_CONNECT_TIME>;
+*             <median of CURLINFO_STARTTRANSFER_TIME>;
+*             <median of CURLINFO_TOTAL_TIME>
+*         NOTE: Caller must make sure the first argument has been allocated
+*               with at least MAX_SIZE_OF_PROG_OUTPUT
+* @param  stat_str    String in the format mentioned at the above desc
+* @param  strLen      Len of the returned string
+* @return Return Code (taken from RC enum)
+*/
+RC connection_stats_get_statistics(char* stat_str, size_t* strLen);
 
 #endif /* CONNECTIONSTATS_H_ */
