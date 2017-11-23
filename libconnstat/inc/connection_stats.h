@@ -79,6 +79,12 @@ RC connection_stats_init();
 RC connection_stats_trigger(HttpReqData* http_req_data);
 
 /**
+* @desc   Collect all required info about the connection and generate statistics 
+* @return Return Code (taken from RC enum)
+*/
+RC connection_stats_analyze();
+
+/**
 * @desc   Close the library gracefully (including closing files and libCURL insstance) 
 * @return Return Code (taken from RC enum)
 */
