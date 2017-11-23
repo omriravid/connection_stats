@@ -35,8 +35,9 @@ UT:
 - Validate getMedian for odd/even/empty arrays
 */
 
-int test_num_of_http_req();
-int test_invalid_url();
+static int test_num_of_http_req();
+static int test_invalid_url();
+static int test_invalid_http_header();
 
 /**
 * @func:  main
@@ -58,6 +59,12 @@ int main() {
 	if (rc != 0) {
 		printf("test_num_of_http_req() failed \n");
 		return 1;
+	}
+	
+	rc = test_invalid_http_header();
+	if (rc != 0) {
+		printf("test_invalid_http_header() failed \n");
+		return 1;
 	}	
 	
 	printf("\n\n##### All tests pass! \n");
@@ -69,7 +76,7 @@ int main() {
 * @desc:  Validate that number of HTTP requests is supported (array limitation)
 * @return 0 if test pass, 1 otherwise
 */
-int test_num_of_http_req() {
+static int test_num_of_http_req() {
 	RC rc;
 	
 	/* Init connection_stats library */
@@ -122,7 +129,7 @@ int test_num_of_http_req() {
 * @desc:  Validate that given URL makes sense
 * @return 0 if test pass, 1 otherwise
 */
-int test_invalid_url() {
+static int test_invalid_url() {
 	RC rc;
 		
 	rc = connection_stats_init();
@@ -148,5 +155,49 @@ int test_invalid_url() {
 
 	/* Close library, here and in every failure above */
 	connection_stats_close();
+	return 0;
+}
+
+/**
+* @func:  test_invalid_http_header
+* @desc:  Validate that given HTTP HEADER makes sense
+* @return 0 if test pass, 1 otherwise
+*/
+static int test_invalid_http_header() {
+	RC rc;
+		rc = connection_stats_init();
+	if (rc != RC_OK) {
+		printf("test_invalid_http_header fail: connection_stats_init() returned rc=%d \n", rc);
+		return 1;
+	}
+	
+	/* Expect failure when http_header is NULL */
+	rc = connection_stats_add_http_hdr(NULL);
+	if (rc != RC_INVALID_HTTP_HEADER) {
+		printf("test_invalid_http_header fail: Expected failure for NULL (rc=%d)\n", rc);
+		return 1;
+	}
+	
+	/* Expect failure when http_header doesn't include ':' */
+	char* invalid_http_header = "header_only";
+	rc = connection_stats_add_http_hdr(invalid_http_header);
+	if (rc != RC_INVALID_HTTP_HEADER) {
+		printf("test_invalid_http_header fail: Expected failure for header only (rc=%d)\n", rc);
+		return 1;
+	}
+	
+	/* Expect success for valid http_header */
+	char* valid_http_header = "header: value";
+	rc = connection_stats_add_http_hdr(valid_http_header);
+	if (rc != RC_OK) {
+		printf("test_invalid_http_header fail: Expected success for valid http_header (rc=%d)\n", rc);
+		return 1;
+	}
+	
+	printf("test_invalid_http_header  ..........  test PASS\n");
+
+	/* Close library, here and in every failure above */
+	connection_stats_close();
+	
 	return 0;
 }
