@@ -1,10 +1,10 @@
 /*
- * connection_stats.c
+ * connection_stats.h
  *
  *  Created on: 22 Nov 2017
  *      Author: Omri Ravid
  * 
- * This is the H file (API) exposed by the libconnstat library.
+ * This is the implmentation file of the libconnstat library.
  * libconnstat library allows you to check how good the connectivity to 
  * a specific URL.
  * It is using the libCURL 'easy' interface (see  https://curl.haxx.se/libcurl/c/)
@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>   // opendir()
+#include <sys/stat.h> // mkdir
 #include <curl/curl.h>
 #include "../inc/connection_stats.h"
 
@@ -26,6 +28,8 @@
 **   Defines     **
 ******************/
 #define MAX_SIZE_OF_IP_ADD      46 // IPv4=15, IPv6=45 (+1 for null terminating char) // TODO: verify the +1
+#define TRACE_ENA               1  // TODO: should I deliver where it is defined or not?
+#define USE_BODY_HEADER_FILES   1  // TODO: rethink if required
 
 
 /******************
@@ -38,6 +42,11 @@ typedef struct  {
 	double total_time;
 } CurlInfo;
 
+#ifdef TRACE_ENA
+struct data {
+  char trace_ascii; /* 1 or 0 */ 
+};
+#endif
 
 struct url_data {
   char *ptr;
@@ -50,11 +59,26 @@ struct url_data {
 ******************/
 static CURL *g_curl;
 static struct curl_slist *g_http_headers_curl_list = NULL;
+static char g_prog_output[MAX_SIZE_OF_PROG_OUTPUT];
+
+#ifdef USE_BODY_HEADER_FILES
+FILE *g_header_file;
+FILE *g_body_file;
+#endif
+
+#ifdef TRACE_ENA
+FILE *g_trace_file;
+#endif
 
 /*************************
 ** Methods Declerations **
 *************************/
-
+#ifdef TRACE_ENA
+static void dump(const char *text, FILE *stream, unsigned char *ptr, 
+				size_t size, char nohex);
+static int trace_func(CURL *handle, curl_infotype type, char *data, 
+					  size_t size, void *userp);
+#endif // TRACE_ENA
 static void init_string(struct url_data *url_data);
 #ifdef WRITEFUNC_USED
 static size_t write_func(void *ptr, size_t size, size_t nmemb, struct url_data *url_data);
@@ -62,6 +86,7 @@ static size_t write_func(void *ptr, size_t size, size_t nmemb, struct url_data *
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream);
 static int double_comp(const void* elem1, const void* elem2);
 static double get_median(double arr[], int arr_size);
+static RC open_trace_files();
 static RC is_valid_http_data_req(HttpReqData *p_http_req_data);
 static RC is_valid_http_header(char* http_header);
 
@@ -184,12 +209,39 @@ RC connection_stats_analyze(CurlInfo* curl_info_arr, int arr_size) {
 	  		  <median of CURLINFO_CONNECT_TIME>;
 	          <median of CURLINFO_STARTTRANSFER_TIME>;
 	  		  <median of CURLINFO_TOTAL_TIME>   */
-	char prog_output[MAX_SIZE_OF_PROG_OUTPUT];
-	sprintf(prog_output, "SKTEST;%s;%ld;%.6f;%.6f;%.6f;%.6f", 
+	sprintf(g_prog_output, "SKTEST;%s;%ld;%.6f;%.6f;%.6f;%.6f", 
 			ip, response_code, 
 			name_lookup_time_median, connect_time_median, 
 			start_transfer_time_median, total_time_median);
-	printf("%s \n", prog_output);
+	//printf("%s \n", g_prog_output);
+	
+	return RC_OK;
+}
+
+/**
+* @func   connection_stats_get_statistics
+* @desc   String with the statistics according to the following format:
+*           TEST;<IP address of HTTP server>;<HTTP response code>;
+*             <median of CURLINFO_NAMELOOKUP_TIME>;
+*             <median of CURLINFO_CONNECT_TIME>;
+*             <median of CURLINFO_STARTTRANSFER_TIME>;
+*             <median of CURLINFO_TOTAL_TIME>
+*         NOTE: Caller must make sure the first argument has been allocated
+*               with at least MAX_SIZE_OF_PROG_OUTPUT
+* @param  stat_str    String in the format mentioned at the above desc
+* @param  strLen      Len of the returned string
+* @return Return Code (taken from RC enum)
+*/
+RC connection_stats_get_statistics(char* stat_str, size_t* strLen) {
+	if (g_prog_output[0] == '\0') {
+		printf("ERROR: Result requested before triggereing \n");
+		*strLen = 0;
+		stat_str = NULL;
+		return RC_RESULT_REQUESTED_BEFORE_TRIGGER;
+	}
+	/* TODO: fix this vulnerability asdsad */ 
+	*strLen = strlen(g_prog_output);
+	memcpy(stat_str, g_prog_output, *strLen);
 	
 	return RC_OK;
 }
@@ -216,6 +268,15 @@ RC connection_stats_init() {
 		return RC_ERROR_IN_CURL;
 	}
 	
+	RC rc = open_trace_files();
+	if (rc != RC_OK) {
+		printf("connection_stats_init() fail with open_trace_files() \n");
+		return rc;
+	}
+	
+	/* Initialize program's output */
+	memset(g_prog_output,'\0',sizeof(g_prog_output));
+	
 	return RC_OK;
 }
 
@@ -224,7 +285,19 @@ RC connection_stats_init() {
 * @return Return Code (taken from RC enum)
 */
 RC connection_stats_close() {
+#ifdef USE_BODY_HEADER_FILES
+	/* close the header file */ 
+	fclose(g_header_file);
 
+	/* close the body file */ 
+	fclose(g_body_file);
+#endif
+
+#ifdef TRACE_ENA
+	/* close the trace file */ 
+	fclose(g_trace_file);
+#endif
+	
 	/* Cleanup CURL before leaving the program*/
 	curl_slist_free_all(g_http_headers_curl_list);
 	curl_easy_cleanup(g_curl);
@@ -263,6 +336,19 @@ RC connection_stats_trigger(HttpReqData *p_http_req_data) {
 	
 	printf("connection_stats_trigger() called [num_of_http_req=%d, url=%s]\n",
 			p_http_req_data->num_of_http_req, p_http_req_data->url);
+
+	/* Initialize program's output */
+	memset(g_prog_output,'\0',sizeof(g_prog_output));
+	
+#ifdef TRACE_ENA
+	/* the DEBUGFUNCTION has no effect until we enable VERBOSE */ 
+	res = curl_easy_setopt(g_curl, CURLOPT_VERBOSE, 1L);
+	if (res != CURLE_OK) {
+		fprintf(stderr, "curl_easy_setopt() failed CURLOPT_VERBOSE: %s\n", 
+				curl_easy_strerror(res));
+		return RC_ERROR_IN_CURL;
+	}
+#endif
 	
 	/* Set all easy curl options */
 	
@@ -292,6 +378,25 @@ RC connection_stats_trigger(HttpReqData *p_http_req_data) {
 	
 	struct url_data url_data;
 	init_string(&url_data);
+
+#ifdef USE_BODY_HEADER_FILES
+	res = curl_easy_setopt(g_curl, CURLOPT_HEADERDATA, g_header_file);
+	if (res != CURLE_OK) {
+		fprintf(stderr, "curl_easy_setopt() failed CURLOPT_HEADERDATA: %s\n", 
+				curl_easy_strerror(res));
+		return RC_ERROR_IN_CURL;
+	}
+	
+	//res = curl_easy_setopt(g_curl, CURLOPT_WRITEDATA, &url_data);
+	res = curl_easy_setopt(g_curl, CURLOPT_WRITEDATA, g_body_file);
+	if (res != CURLE_OK) {
+		fprintf(stderr, "curl_easy_setopt() failed CURLOPT_WRITEDATA: %s\n", 
+				curl_easy_strerror(res));
+		return RC_ERROR_IN_CURL;
+	}
+#endif  // USE_BODY_HEADER_FILES
+
+	
 	//res = curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION, write_func);
 	/* send all data to this function  */ 
 	res = curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION, write_data);
@@ -300,6 +405,24 @@ RC connection_stats_trigger(HttpReqData *p_http_req_data) {
 				curl_easy_strerror(res));
 		return RC_ERROR_IN_CURL;
 	}
+
+#ifdef TRACE_ENA
+	struct data config;
+	config.trace_ascii = 1; /* enable ascii tracing */ 
+	res = curl_easy_setopt(g_curl, CURLOPT_DEBUGFUNCTION, trace_func);
+	if (res != CURLE_OK) {
+		fprintf(stderr, "curl_easy_setopt() failed CURLOPT_DEBUGFUNCTION: %s\n", 
+				curl_easy_strerror(res));
+		return RC_ERROR_IN_CURL;
+	}
+	res = curl_easy_setopt(g_curl, CURLOPT_DEBUGDATA, &config);
+	if (res != CURLE_OK) {
+		fprintf(stderr, "curl_easy_setopt() failed CURLOPT_DEBUGDATA: %s\n", 
+				curl_easy_strerror(res));
+		return RC_ERROR_IN_CURL;
+	}
+#endif
+
 	/* Perform the operation (using curl) multiple times (as requested by user) */
 	for (int i=0; i<p_http_req_data->num_of_http_req; i++) {
 		/* Perform the curl request */
@@ -327,6 +450,98 @@ RC connection_stats_trigger(HttpReqData *p_http_req_data) {
 /***********************
 ** Supporting Methods **
 ***********************/
+
+#ifdef TRACE_ENA
+static void dump(const char *text, FILE *stream, unsigned char *ptr, 
+				size_t size, char nohex)
+{
+	size_t i;
+	size_t c;
+	
+	unsigned int width = 0x10;
+	
+	if(nohex)
+	/* without the hex output, we can fit more on screen */ 
+	width = 0x40;
+	
+	fprintf(stream, "%s, %10.10ld bytes (0x%8.8lx)\n",
+			text, (long)size, (long)size);
+
+	for(i = 0; i<size; i += width) {
+		fprintf(stream, "%4.4lx: ", (long)i);
+		
+		if(!nohex) {
+			/* hex not disabled, show it */ 
+			for(c = 0; c < width; c++)
+			if(i + c < size)
+				fprintf(stream, "%02x ", ptr[i + c]);
+			else
+				fputs("   ", stream);
+		}
+		
+		for(c=0; (c < width) && (i + c < size); c++) {
+			/* Check for 0D0A; if found, skip past and start a new line of output */ 
+			if(nohex && (i + c + 1 < size) && 
+			ptr[i + c] == 0x0D && ptr[i + c + 1] == 0x0A) {
+				i += (c + 2 - width);
+				break;
+			}
+			fprintf(stream, "%c",
+					(ptr[i + c] >= 0x20) && (ptr[i + c]<0x80)?ptr[i + c]:'.');
+			/* check again for 0D0A, to avoid an extra \n if it's at width */ 
+			if(nohex && (i + c + 2 < size) && 
+			ptr[i + c + 1] == 0x0D && ptr[i + c + 2] == 0x0A) {
+				i += (c + 3 - width);
+				break;
+			}
+		}
+		fputc('\n', stream); /* newline */ 
+	}
+	fflush(stream);
+}
+ 
+static int trace_func(CURL *handle, curl_infotype type, char *data, 
+					  size_t size, void *userp)
+{
+	struct data *config = (struct data *)userp;
+	const char *text;
+	(void)handle; /* prevent compiler warning */ 
+	
+	switch(type) {
+		case CURLINFO_TEXT:
+			//fprintf(stderr, "== Info: %s", data);
+			fprintf(g_trace_file, "== Info: %s", data);
+			/* FALLTHROUGH */ 
+		default: /* in case a new one is introduced to shock us */ 
+			return 0;
+	
+		case CURLINFO_HEADER_OUT:
+			text = "=> Send header";
+			break;
+		case CURLINFO_DATA_OUT:
+			text = "=> Send data";
+			break;
+		case CURLINFO_SSL_DATA_OUT:
+			text = "=> Send SSL data";
+			break;
+		case CURLINFO_HEADER_IN:
+			text = "<= Recv header";
+			break;
+		case CURLINFO_DATA_IN:
+			text = "<= Recv data";
+			break;
+		case CURLINFO_SSL_DATA_IN:
+			text = "<= Recv SSL data";
+			break;
+	}
+	
+	//dump(text, stderr, (unsigned char *)data, size, config->trace_ascii);
+	dump(text, g_trace_file, (unsigned char *)data, size, config->trace_ascii);
+	return 0;
+}
+#endif
+
+
 static void init_string(struct url_data *url_data) {
 	url_data->len = 0;
 	url_data->ptr = malloc(url_data->len+1);
@@ -395,6 +610,55 @@ static double get_median(double arr[], int arr_size) {
 	return median;
 }
 
+static RC open_trace_files() {
+	DIR* dir = opendir("trace");
+	if (!dir)
+	{
+		/* Directory does not exist - create it */
+		if (mkdir("trace",0777) == -1) {
+			printf("open_trace_files() fail to create trace dir\n");
+			return RC_ERROR_IN_FILE_OR_FOLDER;
+		}
+	}
+	
+#ifdef USE_BODY_HEADER_FILES
+	/* Open the header file */ 
+	static const char *header_file_name = "trace/head.out";
+	g_header_file = fopen(header_file_name, "wb");
+	if(!g_header_file) {
+		printf("connection_stats_init() fail to open %s \n", header_file_name);
+		curl_easy_cleanup(g_curl);
+		return RC_ERROR_IN_FILE_OR_FOLDER;
+	}
+	
+	/* Open the body file */ 
+	static const char *body_file_name   = "trace/body.out";
+	g_body_file = fopen(body_file_name, "wb");
+	if(!g_body_file) {
+		printf("connection_stats_init() fail to open %s \n", body_file_name);
+		curl_easy_cleanup(g_curl);
+		fclose(g_header_file);
+		return RC_ERROR_IN_FILE_OR_FOLDER;
+	}
+#endif  // USE_BODY_HEADER_FILES
+
+#ifdef TRACE_ENA
+	/* Open the trace file */ 
+	static const char *trace_file_name  = "trace/trace.out";
+	g_trace_file = fopen(trace_file_name, "wb");
+	if(!g_trace_file) {
+		printf("connection_stats_init() fail to open %s \n", trace_file_name);
+		curl_easy_cleanup(g_curl);
+		#ifdef  USE_BODY_HEADER_FILES
+		fclose(g_header_file);
+		fclose(g_body_file);
+		#endif
+		return RC_ERROR_IN_FILE_OR_FOLDER;
+	}
+#endif
+	return RC_OK;
+}
+
 static RC is_valid_http_data_req(HttpReqData *p_http_req_data) {
 	/* Validate num_of_http_req */
 	if ((p_http_req_data->num_of_http_req > MAX_NUM_OF_SUPPORTED_CURL_OPER) ||
@@ -416,6 +680,7 @@ static RC is_valid_http_data_req(HttpReqData *p_http_req_data) {
 	}
 	return RC_OK;
 }
+
 
 static RC is_valid_http_header(char* http_header) {
 	/* Validate HTTP address is legit */
