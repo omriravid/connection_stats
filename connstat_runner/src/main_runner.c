@@ -1,5 +1,5 @@
 /*
- * Main.c
+ * main_runner.c
  *
  *  Created on: 23 Nov 2017
  *      Author: Omri Ravid

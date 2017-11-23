@@ -1,5 +1,5 @@
 /*
- * connection_stats.h
+ * connection_stats.c
  *
  *  Created on: 22 Nov 2017
  *      Author: Omri Ravid
@@ -35,6 +35,7 @@
 /******************
 **  Structures   **
 ******************/
+/* Info attributes to be retrieved from the CURL lib */
 typedef struct  {
 	double name_lookup_time;
 	double connect_time;
@@ -57,8 +58,13 @@ struct url_data {
 /******************
 **  Global Vars  **
 ******************/
+/* Handle for curl operations */ 
 static CURL *g_curl;
+
+/* List of all http headers to be added to the CURL request */
 static struct curl_slist *g_http_headers_curl_list = NULL;
+
+/* Prog/Lib output string */
 static char g_prog_output[MAX_SIZE_OF_PROG_OUTPUT];
 
 #ifdef USE_BODY_HEADER_FILES
@@ -255,6 +261,7 @@ RC connection_stats_init() {
 	
 	/* Initialize libCURL easy interface */
 	
+	/* Global init of curl lib */
 	res = curl_global_init(CURL_GLOBAL_DEFAULT);
 	if (res != CURLE_OK) {
 		printf("connection_stats_init() fail with curl_global_init(): %s\n", 
@@ -262,12 +269,14 @@ RC connection_stats_init() {
 		return RC_ERROR_IN_CURL;
 	}
 
+	/* Retrieve CURL handle */
 	g_curl = curl_easy_init();
 	if (g_curl == NULL) {
 		printf("connection_stats_init() fail with curl_easy_init() \n");
 		return RC_ERROR_IN_CURL;
 	}
 	
+	/* Open files for traces */
 	RC rc = open_trace_files();
 	if (rc != RC_OK) {
 		printf("connection_stats_init() fail with open_trace_files() \n");
@@ -314,21 +323,30 @@ RC connection_stats_close() {
 * @return Return Code (taken from RC enum)
 */
 RC connection_stats_add_http_hdr(char* http_header) {	
+	/* Validate that HTTP Header is legit */
 	RC rc = is_valid_http_header(http_header);
 	if (rc != RC_OK) {
 		return rc;
 	}	
 	
+	/* Append HTTP header to the global list */
 	printf("Adding new HTTP header to list: %s \n", http_header);
 	g_http_headers_curl_list = 
 		curl_slist_append(g_http_headers_curl_list, http_header);
 	return RC_OK;
 }
 
+/**
+* @desc   Trigger for the library to execute HTTP request
+*         According to the previously provided arguments.
+* @param  http_req_data	Data as received by the user 
+* @return Return Code (taken from RC enum)
+*/
 RC connection_stats_trigger(HttpReqData *p_http_req_data) {
 	CURLcode res;
 	CurlInfo curl_info_arr[MAX_NUM_OF_SUPPORTED_CURL_OPER];
 	
+	/* Validate that HTTP data request is legit */
 	RC rc = is_valid_http_data_req(p_http_req_data);
 	if (rc != RC_OK) {
 		return rc;
@@ -574,6 +592,9 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream)
 	return written;
 }
 
+/*
+ * Comparison function between 2 doubles 
+ */
 static int double_comp(const void* elem1, const void* elem2)
 {
     if (*(const double*)elem1 < *(const double*)elem2)
@@ -581,6 +602,9 @@ static int double_comp(const void* elem1, const void* elem2)
     return *(const double*)elem1 > *(const double*)elem2;
 }
 
+/*
+ * Get median of given arr (sized arr_size) 
+ */
 static double get_median(double arr[], int arr_size) {
 	double median = 0.0;
 	int mid = 0;
@@ -610,6 +634,9 @@ static double get_median(double arr[], int arr_size) {
 	return median;
 }
 
+/*
+ * Open the trace files (create trace dir if not opened yet) 
+ */
 static RC open_trace_files() {
 	DIR* dir = opendir("trace");
 	if (!dir)
@@ -659,6 +686,9 @@ static RC open_trace_files() {
 	return RC_OK;
 }
 
+/*
+ * Validate that HTTP data request is legit 
+ */
 static RC is_valid_http_data_req(HttpReqData *p_http_req_data) {
 	/* Validate num_of_http_req */
 	if ((p_http_req_data->num_of_http_req > MAX_NUM_OF_SUPPORTED_CURL_OPER) ||
@@ -681,7 +711,9 @@ static RC is_valid_http_data_req(HttpReqData *p_http_req_data) {
 	return RC_OK;
 }
 
-
+/*
+ * Validate that HTTP Header is legit 
+ */
 static RC is_valid_http_header(char* http_header) {
 	/* Validate HTTP address is legit */
 	if ((http_header == NULL) || (http_header[0] == '\0') || 
