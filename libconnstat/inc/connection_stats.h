@@ -22,14 +22,18 @@
 /******************
 **    Defines    **
 ******************/
-#define MAX_NUM_OF_SUPPORTED_CURL_OPER	16 /* This can be easily extendded
+#define MAX_NUM_OF_SUPPORTED_CURL_OPER  16 /* This can be easily extendded
                                              and in case it is most likely to 
 											 be extendded we can use vector */
-#define DEFAULT_NUM_OF_HTTP_REQ			1
-#define DEFAULT_URL						"http://www.google.com/"
-#define DEFAULT_URL_SIZE				strlen(DEFAULT_URL)
-#define URL_MAX_LEN						64
-#define URL_MIN_LEN						5
+#define DEFAULT_NUM_OF_HTTP_REQ         1
+#define DEFAULT_URL                     "http://www.google.com/"
+#define DEFAULT_URL_SIZE                strlen(DEFAULT_URL)
+#define MAX_SIZE_OF_PROG_OUTPUT         64
+#define URL_MAX_LEN                     64
+#define URL_MIN_LEN                     5
+#define HTTP_HEADER_MAX_LEN             64
+#define HTTP_HEADER_MIN_LEN             2
+
 
 
 /******************
