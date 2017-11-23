@@ -22,14 +22,18 @@
 /******************
 **    Defines    **
 ******************/
-#define MAX_NUM_OF_SUPPORTED_CURL_OPER	16 /* This can be easily extendded
+#define MAX_NUM_OF_SUPPORTED_CURL_OPER  16 /* This can be easily extendded
                                              and in case it is most likely to 
 											 be extendded we can use vector */
-#define DEFAULT_NUM_OF_HTTP_REQ			1
-#define DEFAULT_URL						"http://www.google.com/"
-#define DEFAULT_URL_SIZE				strlen(DEFAULT_URL)
-#define URL_MAX_LEN						64
-#define URL_MIN_LEN						5
+#define DEFAULT_NUM_OF_HTTP_REQ         1
+#define DEFAULT_URL                     "http://www.google.com/"
+#define DEFAULT_URL_SIZE                strlen(DEFAULT_URL)
+#define MAX_SIZE_OF_PROG_OUTPUT         64
+#define URL_MAX_LEN                     64
+#define URL_MIN_LEN                     5
+#define HTTP_HEADER_MAX_LEN             64
+#define HTTP_HEADER_MIN_LEN             2
+
 
 
 /******************
@@ -44,6 +48,7 @@ typedef enum
 	RC_ERROR,
 	RC_INVALID_NUM_OF_HTTP_REQ,
 	RC_INVALID_URL,
+	RC_INVALID_HTTP_HEADER,
 	RC_ERROR_IN_CURL
 } RC;
 
@@ -69,6 +74,14 @@ typedef enum
 * @return Return Code (taken from RC enum)
 */
 RC connection_stats_init();
+
+/**
+* @desc   Add an extra HTTP header to the request
+* @param  http_header	HTTP header to be added to CURL request 
+*                       (In format: "Header-name: Header-value")
+* @return Return Code (taken from RC enum)
+*/
+RC connection_stats_add_http_hdr(char* http_header);
 
 /**
 * @desc   Trigger for the library to execute HTTP request
