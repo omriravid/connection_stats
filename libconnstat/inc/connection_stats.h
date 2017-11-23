@@ -44,6 +44,7 @@ typedef enum
 	RC_ERROR,
 	RC_INVALID_NUM_OF_HTTP_REQ,
 	RC_INVALID_URL,
+	RC_INVALID_HTTP_HEADER,
 	RC_ERROR_IN_CURL
 } RC;
 
@@ -69,6 +70,14 @@ typedef enum
 * @return Return Code (taken from RC enum)
 */
 RC connection_stats_init();
+
+/**
+* @desc   Add an extra HTTP header to the request
+* @param  http_header	HTTP header to be added to CURL request 
+*                       (In format: "Header-name: Header-value")
+* @return Return Code (taken from RC enum)
+*/
+RC connection_stats_add_http_hdr(char* http_header);
 
 /**
 * @desc   Trigger for the library to execute HTTP request
