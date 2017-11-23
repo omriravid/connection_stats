@@ -177,18 +177,26 @@ static int test_invalid_http_header() {
 		printf("test_invalid_http_header fail: Expected failure for NULL (rc=%d)\n", rc);
 		return 1;
 	}
+
+	/* Expect failure when http_header is too short */
+	char* http_header = "a";
+	rc = connection_stats_add_http_hdr(http_header);
+	if (rc != RC_INVALID_HTTP_HEADER) {
+		printf("test_invalid_http_header fail: Expected failure for short header (rc=%d)\n", rc);
+		return 1;
+	}
 	
 	/* Expect failure when http_header doesn't include ':' */
-	char* invalid_http_header = "header_only";
-	rc = connection_stats_add_http_hdr(invalid_http_header);
+	http_header = "header_only";
+	rc = connection_stats_add_http_hdr(http_header);
 	if (rc != RC_INVALID_HTTP_HEADER) {
 		printf("test_invalid_http_header fail: Expected failure for header only (rc=%d)\n", rc);
 		return 1;
 	}
 	
 	/* Expect success for valid http_header */
-	char* valid_http_header = "header: value";
-	rc = connection_stats_add_http_hdr(valid_http_header);
+	http_header = "header: value";
+	rc = connection_stats_add_http_hdr(http_header);
 	if (rc != RC_OK) {
 		printf("test_invalid_http_header fail: Expected success for valid http_header (rc=%d)\n", rc);
 		return 1;
