@@ -49,7 +49,7 @@ struct url_data {
 **  Global Vars  **
 ******************/
 static CURL *g_curl;
-
+static struct curl_slist *g_http_headers_curl_list = NULL;
 
 /*************************
 ** Methods Declerations **
@@ -63,6 +63,7 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream);
 static int double_comp(const void* elem1, const void* elem2);
 static double get_median(double arr[], int arr_size);
 static RC is_valid_http_data_req(HttpReqData *p_http_req_data);
+static RC is_valid_http_header(char* http_header);
 
 /******************
 **    Methods    **
@@ -225,10 +226,29 @@ RC connection_stats_init() {
 RC connection_stats_close() {
 
 	/* Cleanup CURL before leaving the program*/
+	curl_slist_free_all(g_http_headers_curl_list);
 	curl_easy_cleanup(g_curl);
 	curl_global_cleanup();
 	
 	// TODO: does any of the above return RC? use it..
+	return RC_OK;
+}
+
+/**
+* @desc   Add an extra HTTP header to the request
+* @param  http_header	HTTP header to be added to CURL request 
+*                       (In format: "Header-name: Header-value")
+* @return Return Code (taken from RC enum)
+*/
+RC connection_stats_add_http_hdr(char* http_header) {	
+	RC rc = is_valid_http_header(http_header);
+	if (rc != RC_OK) {
+		return rc;
+	}	
+	
+	printf("Adding new HTTP header to list: %s \n", http_header);
+	g_http_headers_curl_list = 
+		curl_slist_append(g_http_headers_curl_list, http_header);
 	return RC_OK;
 }
 
@@ -262,6 +282,14 @@ RC connection_stats_trigger(HttpReqData *p_http_req_data) {
 		return RC_ERROR_IN_CURL;
 	}
 
+	/* Set lib CURL option for adding list of previously configured HTTP headers */
+	res = curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, g_http_headers_curl_list);	
+	if (res != CURLE_OK) {
+		fprintf(stderr, "curl_easy_setopt() failed CURLOPT_HTTPHEADER: %s\n", 
+				curl_easy_strerror(res));
+		return RC_ERROR_IN_CURL;
+	}
+	
 	struct url_data url_data;
 	init_string(&url_data);
 	//res = curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION, write_func);
@@ -367,10 +395,6 @@ static double get_median(double arr[], int arr_size) {
 	return median;
 }
 
-
-
-
-
 static RC is_valid_http_data_req(HttpReqData *p_http_req_data) {
 	/* Validate num_of_http_req */
 	if ((p_http_req_data->num_of_http_req > MAX_NUM_OF_SUPPORTED_CURL_OPER) ||
@@ -389,6 +413,35 @@ static RC is_valid_http_data_req(HttpReqData *p_http_req_data) {
 		printf("connection_stats_trigger() fail with invalid url %s\n", 
 				p_http_req_data->url);
 		return RC_INVALID_URL;
+	}
+	return RC_OK;
+}
+
+static RC is_valid_http_header(char* http_header) {
+	/* Validate HTTP address is legit */
+	if ((http_header == NULL) || (http_header[0] == '\0') || 
+		(strlen(http_header) > HTTP_HEADER_MAX_LEN) ||
+		(strlen(http_header) < HTTP_HEADER_MIN_LEN) ){
+		printf("is_valid_http_header() fail with invalid HTTP header %s\n", 
+				http_header);
+		return RC_INVALID_HTTP_HEADER;
+	}
+	
+	int foundColon = 0;
+	char* c = http_header;
+	while (*c)
+	{
+		if (c[0] == ':')
+		{
+			/* Found ':' char - great */
+			foundColon = 1;
+		}
+		c++;
+	}
+	if (!foundColon) {
+		printf("is_valid_http_header() fail with missing ':' %s\n", 
+				http_header);
+		return RC_INVALID_HTTP_HEADER;
 	}
 	return RC_OK;
 }
